@@ -353,6 +353,7 @@ export class World {
         const isAgentInCell = this.agentCellNumbers.has(cellNumber);
         const agentId = this.getAgentIdFromUnitId(unitId);
 
+        // 扣血
         if (isAgentInCell) {
             this.unitTracker.Units.forEach((units) => {
                 if (units.CellNumber === cellNumber) {

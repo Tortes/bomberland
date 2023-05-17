@@ -43,19 +43,29 @@ export class Game {
         this.endGameFireSpreader = new EndGameFireSpreader(config, world, gameTicker, fireSpawnIntervalTicks);
     }
 
-    public IsGameComplete = (): boolean => {
-        const unitTracker = this.world.UnitTracker;
-        const agentUnitsAliveMap = new Map<string, number>();
-        unitTracker.Units.forEach((unit) => {
-            const { AgentId, HP } = unit;
+    // public IsGameComplete = (): boolean => {
+    //     const unitTracker = this.world.UnitTracker;
+    //     const agentUnitsAliveMap = new Map<string, number>();
+    //     unitTracker.Units.forEach((unit) => {
+    //         const { AgentId, HP } = unit;
 
-            if (HP > 0) {
-                const currentAlive = agentUnitsAliveMap.get(AgentId) ?? 0;
-                agentUnitsAliveMap.set(AgentId, currentAlive + 1);
-            }
+    //         if (HP > 0) {
+    //             const currentAlive = agentUnitsAliveMap.get(AgentId) ?? 0;
+    //             agentUnitsAliveMap.set(AgentId, currentAlive + 1);
+    //         }
+    //     });
+
+    //     return agentUnitsAliveMap.size <= 1;
+    // };
+
+    public IsGameComplete = (): boolean => {
+        const entityTracker = this.world.EntityTracker;
+        var entityCount = 0;
+        entityTracker.Entities.forEach((AbstractEntity) => {
+            entityCount++;
         });
 
-        return agentUnitsAliveMap.size <= 1;
+        return entityCount <= this.world.Width * this.world.Height * 0.9;
     };
 
     public GetCurrentGameState = (): Omit<IGameState, "connection"> => {

@@ -7,15 +7,20 @@ services:
         ports:
             - 3000:3000
         environment:
-            - ADMIN_ROLE_ENABLED=0
+            - ADMIN_ROLE_ENABLED=1
             - AGENT_ID_MAPPING=agentA,agentB
-            - INITIAL_HP=3
-            - PRNG_SEED=1234
-            - SHUTDOWN_ON_GAME_END_ENABLED=1
+            - INITIAL_HP=999999
+            # - PRNG_SEED=1234
+            - SHUTDOWN_ON_GAME_END_ENABLED=0
             - TELEMETRY_ENABLED=1
             - TICK_RATE_HZ=10
             - TRAINING_MODE_ENABLED=0
-            - WORLD_SEED=1234
+            # - WORLD_SEED=1234
+            - UI_ENABLED=1
+            - UNITS_PER_AGENT=1
+            - PRNG_SEED
+            - WORLD_SEED
+            - GAME_DURATION_TICKS=999999999999
         deploy:
             resources:
                 limits:
@@ -26,22 +31,22 @@ services:
 
     # Uncomment the following "agent-a" blocks to connect a second agent to the environment
 
-    # agent-a:
-    #     extends:
-    #         file: base-compose.yml
-    #         # update next line with a service in base-compose.yml to change agent
-    #         service: python3-agent-dev
-    #     environment:
-    #         - GAME_CONNECTION_STRING=ws://game-engine:3000/?role=agent&agentId=agentA&name=python3-agent-dev
-    #     depends_on:
-    #         - game-engine
-    #     deploy:
-    #         resources:
-    #             limits:
-    #                 cpus: "1"
-    #                 memory: "1024M"
-    #     networks:
-    #         - coderone-tournament
+    agent-a:
+        extends:
+            file: base-compose.yml
+            # update next line with a service in base-compose.yml to change agent
+            service: python3-agent-dev
+        environment:
+            - GAME_CONNECTION_STRING=ws://game-engine:3000/?role=agent&agentId=agentA&name=python3-agent-dev
+        depends_on:
+            - game-engine
+        deploy:
+            resources:
+                limits:
+                    cpus: "1"
+                    memory: "1024M"
+        networks:
+            - coderone-tournament
 
     agent-b:
         extends:
