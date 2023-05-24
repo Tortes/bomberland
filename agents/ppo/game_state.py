@@ -9,8 +9,7 @@ _move_set = set(("up", "down", "left", "right"))
 
 
 class GameState:
-    def __init__(self, connection_string: str):
-        self._connection_string = connection_string
+    def __init__(self):
         self._state = None
         self._tick_callback = None
 
@@ -18,9 +17,11 @@ class GameState:
         self._tick_callback = generate_agent_action_callback
 
     async def connect(self):
-        self.connection = await websockets.connect(self._connection_string)
-        if self.connection.open:
-            return self.connection
+        return
+    
+    def set_connect(self, connection_msg):
+        self.connection = connection_msg
+        return
 
     async def _send(self, packet):
         await self.connection.send(json.dumps(packet))
