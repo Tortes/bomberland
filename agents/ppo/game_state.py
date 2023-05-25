@@ -2,6 +2,7 @@ import asyncio
 from typing import Union
 import websockets
 import json
+import random
 
 from websockets.client import WebSocketClientProtocol
 
@@ -38,6 +39,16 @@ class GameState:
     async def send_detonate(self, x, y, unit_id: str):
         packet = {"type": "detonate", "coordinates": [
             x, y], "unit_id": unit_id}
+        await self._send(packet)
+
+    async def send_tick(self):
+        packet = {"type": "request_tick"}
+        await self._send(packet)
+
+    async def send_reset(self):
+        packet = {"type": "request_game_reset",
+                  "world_seed": 1,
+                  "prng_seed": 1}
         await self._send(packet)
 
     async def _handle_messages(self, connection: WebSocketClientProtocol):

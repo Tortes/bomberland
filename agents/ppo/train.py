@@ -5,6 +5,7 @@ import argparse
 import datetime
 import numpy as np
 import gym
+import asyncio
 from torch.utils.tensorboard import SummaryWriter
 
 from tianshou.policy import PPOPolicy
@@ -15,6 +16,9 @@ from tianshou.utils.net.discrete import Actor, Critic
 from tianshou.utils.net.common import Recurrent
 
 from env import Env
+from game_state import GameState
+from env import connect_client_websocket
+from env import connect_admin_websocket
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -136,6 +140,21 @@ def train(args=get_args()):
         print(f'Final reward: {result["rew"]}, length: {result["len"]}')
         collector.close()
 
+async def main():
+    env = Env()
+    admin = GameState()
+    # Connect client and server
+    await asyncio.gather(connect_client_websocket(env), connect_admin_websocket(admin))
+
+
+
+
 if __name__ == '__main__':
-    rospy.init_node('ppo')
-    train()
+    print(r"============Zelda: Tears Of The Kingdom============")
+    print(r"=======================Start=======================")
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    env = Env()
+    admin = GameState()
+    asyncio.run(connect(env, admin))

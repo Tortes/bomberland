@@ -2,6 +2,7 @@ import os
 import json
 import math
 import gym
+import time
 import websockets
 import asyncio
 import random
@@ -173,8 +174,9 @@ class Server():
     async def tick_callback(self, tick_number, game_state):
         self.tick = tick_number
         self.state = game_state
-        print(self.tick)
-        print(self.state)
+        self.unit = game_state.get("payload").get("agents").get("a").get("unit_ids")[0]
+        # print(self.tick)
+        # print(self.state)
 
     def get_state(self):
         return self.state
@@ -196,17 +198,37 @@ class State():
         for elem in state:
             print(elem)
 
-async def connect_websocket(env):
-    async with websockets.connect("ws://127.0.0.1:3000/?role=agent&agentId=agentA&name=defaultName") as connection_msg:
-        env.server.client.set_connect(connection_msg)
-        while True:
-            data = await connection_msg.recv()
-            json_data = json.loads(data)
-            # print(json.dumps(json_data, indent=1))
+async def connect_client_websocket(env):
+    connection_msg = await websockets.connect("ws://127.0.0.1:3000/?role=agent&agentId=agentA&name=defaultName")
+    loop = asyncio.get_event_loop()
+    env.server.client.set_connect(connection_msg)
+    loop.create_task(env.server.client._handle_messages(connection_msg))
 
-async def main():
-    env = Env()
-    await asyncio.gather(connect_websocket(env))
+async def connect_admin_websocket(admin):
+    connection_msg = await websockets.connect("ws://127.0.0.1:3000/?role=admin")
+    loop = asyncio.get_event_loop()
+    admin.set_connect(connection_msg)
+    loop.create_task(admin._handle_messages(connection_msg))
+
+async def connect(env, admin):
+    await asyncio.gather(connect_client_websocket(env), connect_admin_websocket(admin))
+    await main(env, admin)
+
+async def do_train(env, admin):
+    print("BBB")
+    await admin.send_reset()
+    await env.server.send_action("up")
+    for i in range(5):
+        await admin.send_tick()
+        time.sleep(60)
+
+async def main(env, admin):
+    print("AAA")
+    await do_train(env, admin)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    env = Env()
+    admin = GameState()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    asyncio.run(connect(env, admin))
