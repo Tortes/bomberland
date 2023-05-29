@@ -1,20 +1,21 @@
 import numpy as np
-from env import Env
 INVULERABILITY_DURATION = 5.0
 
 class State():
-    def __init__(self, env: Env):
+    def __init__(self, env):
         self.env = env
         self.unit_layers = np.zeros([15,15,4,2], np.float32)
         self.entity_hp_layers = np.zeros([15,15,5], np.uint8)
-        self.entity_pos_layers = np.zeros([15,15], np.float32)
-        self.entity_duration_layers = np.zeros([15,15], np.float32)
+        self.entity_pos_layers = np.zeros([15,15,4], np.float32)
+        self.entity_duration_layers = np.zeros([15,15,2], np.float32)
         self.bomb_expire_layers = np.zeros([15,15], np.float32)
-        self.world_layers = np.ones([15,15], np.float32)
         self.tick = 0
 
     def update_state(self, state_info, tick_number):
         self.tick = tick_number
+        self.update_unit_layers(state_info)
+        self.update_entity_layers(state_info)
+        return self.unit_layers
 
     def update_unit_layers(self, state_info):
         agent2units_single = {
@@ -60,12 +61,26 @@ class State():
         self.entity_hp_layers[:,:,4] = (f'fire time', np.float32(fire_time), '3.1f')
         print(self.entity_hp_layers)
 
-        for type in ['b', 'a', 'bp', 'fp']:
+        for idx, type in enumerate(['b', 'a', 'bp', 'fp']):
             layer = np.zeros([15, 15], np.float32)
-            for e in entities:
+            for e in state_info["entities"]:
                 if e['type'] != type: continue
                 layer[e['y'], e['x']] = 1.0
-            layers.append((f'entity {type} pos', layer, '01.0f'))
+            self.entity_pos_layers[:,:,idx] = (f'entity {type} pos', layer, '01.0f')
+        print(self.entity_pos_layers)
 
-    def update_entity_pos(self, state_info):
+        for idx, type in enumerate(['b', 'x']):
+            layer = np.zeros([15, 15], np.float32)
+            for e in state_info["entities"]:
+                if e['type'] != type: continue
+                layer[e['y'], e['x']] = float(e.get('expires',9999) > self.tick+1)
+            self.entity_duration_layers[:,:,idx] = (f'entity {type} remain', layer, '01.0f')
+
+        for type in ['b']:
+            layer = np.zeros([15, 15], np.float32)
+            for e in state_info["entities"]:
+                if e['type'] != type: continue
+                if 'expires' not in e: continue
+                layer[e['y'], e['x']] = float(e['expires'] - self.tick) / 40.0
+            self.bomb_expire_layers = (f'entity {type} expires', layer, '3.1f')
 

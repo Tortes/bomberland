@@ -9,144 +9,221 @@ import asyncio
 from torch.utils.tensorboard import SummaryWriter
 
 from tianshou.policy import PPOPolicy
+from torch.optim.lr_scheduler import LambdaLR
 from tianshou.trainer import onpolicy_trainer
-from tianshou.data import Collector, ReplayBuffer
+from tianshou.data import Collector, VectorReplayBuffer
 from tianshou.utils.net.discrete import Actor, Critic
+from tianshou.utils.net.common import ActorCritic
 # from tianshou.utils.net.common import Net
 from tianshou.utils.net.common import Recurrent
+from tianshou.utils import TensorboardLogger
 
 from env import Env
 from game_state import GameState
-from env import connect_client_websocket
-from env import connect_admin_websocket
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--is_training', type=bool, default=True)
-    parser.add_argument('--linear_velocity', type=float, default=0.5)
-    parser.add_argument('--angular_velocity', type=float, default=1.0)
-    parser.add_argument('--realsense_max_point', type=int, default=5000)
-    parser.add_argument('--load_model', type=str, default=None)
-    parser.add_argument('--save_path', type=str, default=None)
-
-    #
-    parser.add_argument('--seed', type=int, default=1626)
-    parser.add_argument('--buffer-size', type=int, default=20000)
-    parser.add_argument('--lr', type=float, default=1e-3)
-    parser.add_argument('--gamma', type=float, default=0.99)
-    parser.add_argument('--epoch', type=int, default=1)
-    parser.add_argument('--step-per-epoch', type=int, default=100)
-    parser.add_argument('--collect-per-step', type=int, default=100)
-    parser.add_argument('--repeat-per-collect', type=int, default=2)
-    parser.add_argument('--batch-size', type=int, default=64)
-    parser.add_argument('--layer-num', type=int, default=128)
-    parser.add_argument('--training-num', type=int, default=8)
-    parser.add_argument('--test-num', type=int, default=8)
-    parser.add_argument('--logdir', type=str, default='log')
-    parser.add_argument('--render', type=float, default=1.)
+    parser.add_argument("-e", "--server", type=str, default="127.0.0.1:3000")
+    parser.add_argument("-a", "--agent", type=str, default="agentA")
+    parser.add_argument("--seed", type=int, default=4213)
+    parser.add_argument("--layer-number", type=int, default=128)
+    parser.add_argument("--scale-obs", type=int, default=1)
+    parser.add_argument("--buffer-size", type=int, default=100000)
+    parser.add_argument("--lr", type=float, default=2.5e-4)
+    parser.add_argument("--gamma", type=float, default=0.99)
+    parser.add_argument("--epoch", type=int, default=100)
+    parser.add_argument("--step-per-epoch", type=int, default=100000)
+    parser.add_argument("--step-per-collect", type=int, default=1000)
+    parser.add_argument("--repeat-per-collect", type=int, default=4)
+    parser.add_argument("--batch-size", type=int, default=256)
+    parser.add_argument("--hidden-size", type=int, default=512)
+    parser.add_argument("--training-num", type=int, default=10)
+    parser.add_argument("--test-num", type=int, default=10)
+    parser.add_argument("--rew-norm", type=int, default=False)
+    parser.add_argument("--vf-coef", type=float, default=0.25)
+    parser.add_argument("--ent-coef", type=float, default=0.01)
+    parser.add_argument("--gae-lambda", type=float, default=0.95)
+    parser.add_argument("--lr-decay", type=int, default=True)
+    parser.add_argument("--max-grad-norm", type=float, default=0.5)
+    parser.add_argument("--eps-clip", type=float, default=0.1)
+    parser.add_argument("--dual-clip", type=float, default=None)
+    parser.add_argument("--value-clip", type=int, default=1)
+    parser.add_argument("--norm-adv", type=int, default=1)
+    parser.add_argument("--recompute-adv", type=int, default=0)
+    parser.add_argument("--logdir", type=str, default="log")
+    parser.add_argument("--render", type=float, default=0.)
     parser.add_argument(
-        '--device', type=str,
-        default='cuda' if torch.cuda.is_available() else 'cpu')
-    
-    # ppo special
-    parser.add_argument('--vf-coef', type=float, default=0.5)
-    parser.add_argument('--ent-coef', type=float, default=0.0)
-    parser.add_argument('--eps-clip', type=float, default=0.2)
-    parser.add_argument('--max-grad-norm', type=float, default=0.5)
-    parser.add_argument('--max_episode_steps', type=int, default=2000)
-    
-    parser.add_argument('--url', type=str, default="ws://127.0.0.1:3000/?role=agent&agentId=agentA&name=defaultName")
-    args = parser.parse_known_args()[0]
-    return args
+        "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu"
+    )
+    parser.add_argument("--frames-stack", type=int, default=4)
+    parser.add_argument("--resume-path", type=str, default=None)
+    parser.add_argument("--resume-id", type=str, default=None)
+    parser.add_argument(
+        "--logger",
+        type=str,
+        default="tensorboard",
+        choices=["tensorboard", "wandb"],
+    )
+    parser.add_argument("--wandb-project", type=str, default="atari.benchmark")
+    parser.add_argument(
+        "--watch",
+        default=False,
+        action="store_true",
+        help="watch the play of pre-trained policy only"
+    )
+    parser.add_argument("--save-buffer-name", type=str, default=None)
+    parser.add_argument(
+        "--icm-lr-scale",
+        type=float,
+        default=0.,
+        help="use intrinsic curiosity module with this lr scale"
+    )
+    parser.add_argument(
+        "--icm-reward-scale",
+        type=float,
+        default=0.01,
+        help="scaling factor for intrinsic curiosity reward"
+    )
+    parser.add_argument(
+        "--icm-forward-loss-weight",
+        type=float,
+        default=0.2,
+        help="weight for the forward model loss in ICM"
+    )
+    return parser.parse_args()
 
-def train(args=get_args()):
+async def main(args=get_args()):
+    train_env = Env(args.server, args.agent)
+    # Connect client and server
+    await asyncio.gather(train_env.server.client.connect(), train_env.server.admin.connect())
 
-    # Get Env
-    env = Env(args.url)
-    train_env = Env(args.url)
-    test_env = Env(args.url)
+    await train_env.server.admin.send_reset()
 
-    # Get args
-    action_shape = env.action_dim
-    state_shape = env.state_dim
-
-    # Set seed
+    # seed
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
-    train_env.seed(args.seed)
-    test_env.seed(args.seed)
 
-    # Def net
-    # net = Net(args.layer_num, 
-    #           state_shape, 
-    #           action_shape, 
-    #           device=args.device)
-    net = Recurrent(args.layer_num, 
-              state_shape, 
-              action_shape, 
-              device=args.device)
+    action_shape = train_env.action_dim
+    state_shape = train_env.state_dim
 
-    actor = Actor(net, action_shape, hidden_layer_size=action_shape).to(args.device)
-    critic = Critic(net, hidden_layer_size=action_shape).to(args.device)
-    optim = torch.optim.Adam(list(actor.parameters()) + list(critic.parameters()), lr=args.lr)
-    dist = torch.distributions.Categorical
+    # define model
+    net_cls = Recurrent
+    net = net_cls(
+        args.layer_number,
+        state_shape,
+        action_shape,
+        device=args.device
+    )
+    actor = Actor(net, action_shape, device=args.device, softmax_output=False)
+    critic = Critic(net, device=args.device)
+    optim = torch.optim.Adam(
+        ActorCritic(actor, critic).parameters(), lr=args.lr, eps=1e-5
+    )
+
+    lr_scheduler = None
+    if args.lr_decay:
+        # decay learning rate to 0 linearly
+        max_update_num = np.ceil(
+            args.step_per_epoch / args.step_per_collect
+        ) * args.epoch
+
+        lr_scheduler = LambdaLR(
+            optim, lr_lambda=lambda epoch: 1 - epoch / max_update_num
+        )
+
+    # define policy
+    def dist(p):
+        return torch.distributions.Categorical(logits=p)
+
     policy = PPOPolicy(
-        actor, critic, optim, dist, args.gamma,
+        actor,
+        critic,
+        optim,
+        dist,
+        discount_factor=args.gamma,
+        gae_lambda=args.gae_lambda,
         max_grad_norm=args.max_grad_norm,
-        eps_clip=args.eps_clip,
         vf_coef=args.vf_coef,
         ent_coef=args.ent_coef,
-        action_range=None,
-        reward_normalization=False)
+        reward_normalization=args.rew_norm,
+        action_scaling=False,
+        lr_scheduler=lr_scheduler,
+        action_space=train_env.action_space,
+        eps_clip=args.eps_clip,
+        value_clip=args.value_clip,
+        dual_clip=args.dual_clip,
+        advantage_normalization=args.norm_adv,
+        recompute_advantage=args.recompute_adv,
+    ).to(args.device)
     
-    # Def Collector
-    train_collector = Collector(policy, 
-                                train_env, 
-                                ReplayBuffer(args.buffer_size, ignore_obs_next=True))
-    test_collector = Collector(policy, test_env)
+    # load a previous policy
+    if args.resume_path:
+        policy.load_state_dict(torch.load(args.resume_path, map_location=args.device))
+        print("Loaded agent from: ", args.resume_path)
+    # replay buffer: `save_last_obs` and `stack_num` can be removed together
+    # when you have enough RAM
+    buffer = VectorReplayBuffer(
+        args.buffer_size,
+        buffer_num=len(train_env),
+        ignore_obs_next=True,
+        save_only_last_obs=True,
+        stack_num=args.frames_stack,
+    )
+    # collector
+    train_collector = Collector(policy, train_env, buffer, exploration_noise=True)
 
-    # Def logger
-    writer = SummaryWriter(args.logdir + '/' + 'ppo')
+    # log
+    now = datetime.datetime.now().strftime("%y%m%d-%H%M%S")
+    args.algo_name = "ppo_icm" if args.icm_lr_scale > 0 else "ppo"
+    log_name = os.path.join(args.task, args.algo_name, str(args.seed), now)
+    log_path = os.path.join(args.logdir, log_name)
 
-    # Load Model
-    if args.load_model:
-        policy.load_state_dict(torch.load(args.load_model))
-    
-    # Set stop fn
-    def stop_fn(x):
-        return x >= 10
+    # logger
+    writer = SummaryWriter(log_path)
+    writer.add_text("args", str(args))
+    if args.logger == "tensorboard":
+        logger = TensorboardLogger(writer)
+    else:  # wandb
+        logger.load(writer)
 
-    # Trainer
+    def save_best_fn(policy):
+        torch.save(policy.state_dict(), os.path.join(log_path, "policy.pth"))
+
+    def stop_fn(mean_rewards):
+        if env.spec.reward_threshold:
+            return mean_rewards >= env.spec.reward_threshold
+        elif "Pong" in args.task:
+            return mean_rewards >= 20
+        else:
+            return False
+
+    def save_checkpoint_fn(epoch, env_step, gradient_step):
+        # see also: https://pytorch.org/tutorials/beginner/saving_loading_models.html
+        ckpt_path = os.path.join(log_path, f"checkpoint_{epoch}.pth")
+        torch.save({"model": policy.state_dict()}, ckpt_path)
+        return ckpt_path
+
+    # test train_collector and start filling replay buffer
+    train_collector.collect(n_step=args.batch_size * args.training_num)
+    # trainer
     result = onpolicy_trainer(
-        policy, train_collector, test_collector, args.epoch,
-        args.step_per_epoch, args.collect_per_step, args.repeat_per_collect,
-        args.test_num, args.batch_size, stop_fn=stop_fn, writer=writer)
+        policy = policy,
+        train_collector = train_collector,
+        max_epoch = args.epoch,
+        step_per_epoch = args.step_per_epoch,
+        repeat_per_collect = args.repeat_per_collect,
+        episode_per_collect = args.test_num,
+        batch_size = args.batch_size,
+        step_per_collect=args.step_per_collect,
+        stop_fn=stop_fn,
+        save_best_fn=save_best_fn,
+        logger=logger,
+        test_in_train=False,
+        resume_from_log=args.resume_id is not None,
+        save_checkpoint_fn=save_checkpoint_fn,
+    )
 
-    # Saver
-    if args.save_path:
-        filename = os.path.join(args.save_path, datetime.date.today(), 'ppo_discrete.pth')
-        torch.save(policy.state_dict(), filename)
-    else:
-        torch.save(policy.state_dict(), 'ppo_discrete.pth')
-    
-    train_collector.close()
-    test_collector.close()
-
-    if __name__ == '__main__':
-        pprint.pprint(result)
-        env = Env(args.is_training)
-        collector = Collector(policy, env)
-        result = collector.collect(n_step=2000, render=args.render)
-        print(f'Final reward: {result["rew"]}, length: {result["len"]}')
-        collector.close()
-
-async def main():
-    env = Env()
-    admin = GameState()
-    # Connect client and server
-    await asyncio.gather(connect_client_websocket(env), connect_admin_websocket(admin))
-
-
+    pprint.pprint(result)
 
 
 if __name__ == '__main__':
@@ -155,6 +232,4 @@ if __name__ == '__main__':
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    env = Env()
-    admin = GameState()
-    asyncio.run(connect(env, admin))
+    asyncio.run(main())
