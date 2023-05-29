@@ -10,7 +10,8 @@ _move_set = set(("up", "down", "left", "right"))
 
 
 class GameState:
-    def __init__(self):
+    def __init__(self, connection_string: str):
+        self._connection_string = connection_string
         self._state = None
         self._tick_callback = None
 
@@ -18,7 +19,11 @@ class GameState:
         self._tick_callback = generate_agent_action_callback
 
     async def connect(self):
-        return
+        connection_msg = await websockets.connect(self._connection_string)
+        loop = asyncio.get_event_loop()
+        self.connection = connection_msg
+        print(self._connection_string + " Connected!")
+        loop.create_task(self._handle_messages(connection_msg))
     
     def set_connect(self, connection_msg):
         self.connection = connection_msg
@@ -69,7 +74,7 @@ class GameState:
             pass
         elif data_type == "game_state":
             payload = data.get("payload")
-            self._on_game_state(payload)
+            await self._on_game_state(payload)
         elif data_type == "tick":
             payload = data.get("payload")
             await self._on_game_tick(payload)
@@ -80,8 +85,10 @@ class GameState:
         else:
             print(f"unknown packet \"{data_type}\": {data}")
 
-    def _on_game_state(self, game_state):
+    async def _on_game_state(self, game_state):
         self._state = game_state
+        if self._tick_callback is not None:
+            await self._tick_callback(0, game_state)
 
     async def _on_game_tick(self, game_tick):
         events = game_tick.get("events")

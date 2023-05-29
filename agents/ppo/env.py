@@ -10,16 +10,16 @@ import random
 from math import pi
 import numpy as np
 from typing import Dict, List, Union
+from server import Server
 
-from game_state import GameState
-
-actions = ["up", "down", "left", "right", "bomb", "detonate"]
+ACTIONS = ["up", "down", "left", "right", "bomb", "detonate0", "detonate1", "detonate2"]
 
 class Env():
-    def __init__(self):
-        self.server = Server()
-        self.state = State()
+    def __init__(self, server_port: str, agent: str):
+        self.server = Server(server_port, agent)
         self.last_state = None
+        self.action_dim = len(ACTIONS)
+        self.state_dim = 225
 
     # Define action
     def action_space(self):
