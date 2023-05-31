@@ -22,7 +22,8 @@ class Env():
         self.state = State(self)
         self.action_dim = len(ACTIONS)
         self.state_dim = 225
-        self.action_space = ACTIONS
+        self.action = np.array(ACTIONS)
+        self.observation = np.zeros((225, 2, 2))
 
     # Define action
     def action_space(self):
